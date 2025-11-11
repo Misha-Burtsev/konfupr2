@@ -1,0 +1,8 @@
+{
+  "name": "demo_local_repo",
+  "version": "1.0.0",
+  "dependencies": {
+    "lodash": "^4.17.21",
+    "axios": "^1.7.7"
+  }
+}

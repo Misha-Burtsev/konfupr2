@@ -12,6 +12,7 @@ parser.add_argument("--package", required=True)
 parser.add_argument("--repo", required=True)
 parser.add_argument("--mode", required=True, choices=["local", "remote", "test"]) # Добавлен режим test
 parser.add_argument("--output", required=True)
+parser.add_argument("--reverse", action="store_true")   # только для этапа 4 (test-режим)
 args = parser.parse_args()
 
 # Проверяет, является ли строка корректным http/https URL
@@ -108,13 +109,34 @@ def bfs(graph: dict, start: str):                       # Реализация �
                 q.append(neigh)
     return order                                        # Возвращает порядок обхода вершин
 
+def build_reverse_graph(graph: dict):  # Строит обратные рёбра: dep -> кто зависит
+    rev = {k: [] for k in graph}  # Инициализируем все узлы из левой части
+    for deps in graph.values():  # Добавляем узлы, встречающиеся только справа
+        for d in deps:
+            if d not in rev:
+                rev[d] = []
+    for u, deps in graph.items():
+        for v in deps:
+            rev[v].append(u)  # Ребро u->v превращаем в v->u
+    return rev
+
 # ---------------- Основная логика ---------------- #
 
 if args.mode == "test":                                 # Тестовый режим
     graph = load_test_graph(args.repo)                  # Загружаем граф из текстового файла
-    order = bfs(graph, args.package)                    # Обход графа начиная с указанного пакета
-    print("Порядок обхода графа (BFS):")
-    print(" ".join(order))
+    if args.reverse:
+        rev = build_reverse_graph(graph)                # Обратный граф: кому нужен стартовый пакет
+        order = bfs(rev, args.package)                  # Тот же BFS из этапа 3
+        dependents = [x for x in order if x != args.package]  # Исключаем сам пакет
+        print("Обратные зависимости пакета:", args.package)
+        if not dependents:
+            print("(нет обратных зависимостей)")
+        else:
+            print(" ".join(dependents))
+    else:
+        order = bfs(graph, args.package)                # Прямой обход как в этапе 3
+        print("Порядок обхода графа (BFS):")
+        print(" ".join(order))
 
 else:                                                   # Режимы local и remote
     # Загружаем JSON-файл и извлекаем зависимости

@@ -1,5 +1,6 @@
 import argparse
 import os
+import subprocess
 import sys
 import json # Для парсинга (чтения) JSON-файлов
 from urllib.parse import urlparse
@@ -120,6 +121,35 @@ def build_reverse_graph(graph: dict):  # Строит обратные рёбр�
             rev[v].append(u)  # Ребро u->v превращаем в v->u
     return rev
 
+# ---------------- Этап 5: генерация D2 и SVG ---------------- #
+def save_d2_and_svg(graph: dict, start: str, output_svg: str):  # Визуализация графа зависимостей
+    if not output_svg.endswith(".svg"):
+        sys.exit("Ошибка: для визуализации (этап 5) выходной файл должен иметь расширение .svg")
+
+    reachable_list = bfs(graph, start)  # Берём только достижимые из start вершины
+    reachable = set(reachable_list)
+
+    edges = set()
+    # Проходим по каждой достижимой вершине u и смотрим на её зависимости v.
+    for u in reachable_list:
+        for v in graph.get(u, []):
+            if v in reachable:
+                edges.add((u, v))
+
+    lines = []
+    lines.append("direction: right")
+    for u, v in edges:
+        lines.append(f"{u} -> {v}")
+
+    d2_path = os.path.splitext(output_svg)[0] + ".d2"   # Получить имя файла без расширения + .d2 -файла рядом с SVG
+    with open(d2_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    try:
+        subprocess.run(["d2", d2_path, output_svg], check=True)  # Запускаем утилиту d2
+    except subprocess.CalledProcessError as e:
+        sys.exit(f"Ошибка: команда d2 завершилась с ошибкой: {e}")
+
 # ---------------- Основная логика ---------------- #
 
 if args.mode == "test":                                 # Тестовый режим
@@ -138,6 +168,9 @@ if args.mode == "test":                                 # Тестовый ре�
         print("Порядок обхода графа (BFS):")
         print(" ".join(order))
 
+    # Этап 5: визуализация тестового графа
+    save_d2_and_svg(graph, args.package, args.output)
+
 else:                                                   # Режимы local и remote
     # Загружаем JSON-файл и извлекаем зависимости
     pkg = load_package_json(args.repo, args.mode)       # Загрузка
@@ -154,3 +187,8 @@ else:                                                   # Режимы local и 
     else:
         for name, version in deps.items():
             print(f"{name} {version}")
+
+    # Этап 5: простая визуализация для реального репозитория:
+    # строим граф только из прямых зависимостей вида package ->
+    graph = {args.package: list(deps.keys())}
+    save_d2_and_svg(graph, args.package, args.output)

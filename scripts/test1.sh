@@ -6,7 +6,7 @@ python3 ../main.py --package demo --repo ./ --mode local --output graph.png
 echo
 
 echo "=== Тест 2: все параметры корректны (remote) ==="
-python3 ../main.py --package demo --repo https://example.com/repo --mode remote --output graph.svg
+python3 ../main.py --package demo --repo https://github/repo --mode remote --output graph.svg
 echo
 
 echo "=== Тест 3: отсутствует параметр package ==="

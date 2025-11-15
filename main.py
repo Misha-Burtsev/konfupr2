@@ -1,5 +1,6 @@
 import argparse
 import os
+import subprocess
 import sys
 import json # Для парсинга (чтения) JSON-файлов
 from urllib.parse import urlparse
@@ -12,6 +13,7 @@ parser.add_argument("--package", required=True)
 parser.add_argument("--repo", required=True)
 parser.add_argument("--mode", required=True, choices=["local", "remote", "test"]) # Добавлен режим test
 parser.add_argument("--output", required=True)
+parser.add_argument("--reverse", action="store_true")   # только для этапа 4 (test-режим)
 args = parser.parse_args()
 
 # Проверяет, является ли строка корректным http/https URL
@@ -108,13 +110,66 @@ def bfs(graph: dict, start: str):                       # Реализация �
                 q.append(neigh)
     return order                                        # Возвращает порядок обхода вершин
 
+def build_reverse_graph(graph: dict):  # Строит обратные рёбра: dep -> кто зависит
+    rev = {k: [] for k in graph}  # Инициализируем все узлы из левой части
+    for deps in graph.values():  # Добавляем узлы, встречающиеся только справа
+        for d in deps:
+            if d not in rev:
+                rev[d] = []
+    for u, deps in graph.items():
+        for v in deps:
+            rev[v].append(u)  # Ребро u->v превращаем в v->u
+    return rev
+
+# ---------------- Этап 5: генерация D2 и SVG ---------------- #
+def save_d2_and_svg(graph: dict, start: str, output_svg: str):  # Визуализация графа зависимостей
+    if not output_svg.endswith(".svg"):
+        sys.exit("Ошибка: для визуализации (этап 5) выходной файл должен иметь расширение .svg")
+
+    reachable_list = bfs(graph, start)  # Берём только достижимые из start вершины
+    reachable = set(reachable_list)
+
+    edges = set()
+    # Проходим по каждой достижимой вершине u и смотрим на её зависимости v.
+    for u in reachable_list:
+        for v in graph.get(u, []):
+            if v in reachable:
+                edges.add((u, v))
+
+    lines = []
+    lines.append("direction: right")
+    for u, v in edges:
+        lines.append(f"{u} -> {v}")
+
+    d2_path = os.path.splitext(output_svg)[0] + ".d2"   # Получить имя файла без расширения + .d2 -файла рядом с SVG
+    with open(d2_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    try:
+        subprocess.run(["d2", d2_path, output_svg], check=True)  # Запускаем утилиту d2
+    except subprocess.CalledProcessError as e:
+        sys.exit(f"Ошибка: команда d2 завершилась с ошибкой: {e}")
+
 # ---------------- Основная логика ---------------- #
 
 if args.mode == "test":                                 # Тестовый режим
     graph = load_test_graph(args.repo)                  # Загружаем граф из текстового файла
-    order = bfs(graph, args.package)                    # Обход графа начиная с указанного пакета
-    print("Порядок обхода графа (BFS):")
-    print(" ".join(order))
+    if args.reverse:
+        rev = build_reverse_graph(graph)                # Обратный граф: кому нужен стартовый пакет
+        order = bfs(rev, args.package)                  # Тот же BFS из этапа 3
+        dependents = [x for x in order if x != args.package]  # Исключаем сам пакет
+        print("Обратные зависимости пакета:", args.package)
+        if not dependents:
+            print("(нет обратных зависимостей)")
+        else:
+            print(" ".join(dependents))
+    else:
+        order = bfs(graph, args.package)                # Прямой обход как в этапе 3
+        print("Порядок обхода графа (BFS):")
+        print(" ".join(order))
+
+    # Этап 5: визуализация тестового графа
+    save_d2_and_svg(graph, args.package, args.output)
 
 else:                                                   # Режимы local и remote
     # Загружаем JSON-файл и извлекаем зависимости
@@ -132,3 +187,8 @@ else:                                                   # Режимы local и 
     else:
         for name, version in deps.items():
             print(f"{name} {version}")
+
+    # Этап 5: простая визуализация для реального репозитория:
+    # строим граф только из прямых зависимостей вида package ->
+    graph = {args.package: list(deps.keys())}
+    save_d2_and_svg(graph, args.package, args.output)
